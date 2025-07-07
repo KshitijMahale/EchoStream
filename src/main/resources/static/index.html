@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Reactive Chat</title>
+</head>
+<body>
+<h2>Reactive Chat</h2>
+<input type="text" id="username" placeholder="Username">
+<br>
+<input type="text" id="message" placeholder="Type a message">
+<button onclick="sendMessage()">Send</button>
+<ul id="messages"></ul>
+
+<script>
+  var socket = new WebSocket('ws://localhost:8080/ws/chat');
+  let username = '';
+
+  document.getElementById('username').addEventListener('change', function () {
+      username = this.value;
+      socket = new WebSocket('ws://localhost:8080/ws/chat');
+
+      socket.onmessage = function (event) {
+          const msg = JSON.parse(event.data);
+          const item = document.createElement('li');
+          item.textContent = `${msg.sender}: ${msg.content}`;
+          document.getElementById('messages').appendChild(item);
+      };
+
+      socket.onopen = () => {
+          const joinMessage = {
+              type: 'JOIN',
+              sender: username,
+              content: ''
+          };
+          socket.send(JSON.stringify(joinMessage));
+      };
+  });
+
+  function sendMessage() {
+      const message = document.getElementById('message').value;
+      const chatMessage = {
+          type: 'CHAT',
+          sender: username,
+          content: message
+      };
+      socket.send(JSON.stringify(chatMessage));
+      document.getElementById('message').value = '';
+  }
+</script>
+</body>
+</html>
