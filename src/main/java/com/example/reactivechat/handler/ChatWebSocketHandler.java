@@ -10,6 +10,7 @@ import org.springframework.web.reactive.socket.WebSocketMessage;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import java.util.Map;
 
 @Slf4j
 @Component
@@ -18,24 +19,40 @@ public class ChatWebSocketHandler implements WebSocketHandler {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // Sink to push messages to all connected clients
+    // A reactive sink to broadcast messages to all connected clients
     private final Sinks.Many<String> chatSink = Sinks.many().multicast().onBackpressureBuffer();
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
-        // messages from sink to client
+        // Broadcasted output stream (server -> client)
         Flux<WebSocketMessage> output = chatSink.asFlux()
-                .map(session::textMessage);// wrap each string as WebSocketMessage
+                .map(session::textMessage);
 
-        // client message to sink
+        // Handle input (client -> server)
         Flux<String> input = session.receive()
                 .map(WebSocketMessage::getPayloadAsText)
                 .doOnNext(payload -> {
                     log.info("Received: {}", payload);
-                    chatSink.tryEmitNext(payload);
+                    try {
+                        Map<String, Object> message = objectMapper.readValue(payload, Map.class);
+                        String type = (String) message.get("type");
+
+                        // Only allow valid message types to be broadcast
+                        if (type != null && (
+                                type.equals("CHAT") ||
+                                        type.equals("JOIN") ||
+                                        type.equals("LEAVE") ||
+                                        type.equals("TYPING") ||
+                                        type.equals("STOP_TYPING"))
+                        ) {
+                            chatSink.tryEmitNext(payload);
+                        }
+                    } catch (Exception e) {
+                        log.error("Failed to parse message: {}", payload, e);
+                    }
                 });
 
-        return session.send(output)
-                .and(input.then());
+        // Send output while consuming input
+        return session.send(output).and(input.then());
     }
 }
