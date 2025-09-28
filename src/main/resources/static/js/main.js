@@ -4,11 +4,25 @@ let socket;
 let username;
 let typing = false;
 let typingTimeout;
+let currentPage = 0;
+let loadingHistory = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('#usernameForm').addEventListener('submit', connect, true);
     document.querySelector('#messageForm').addEventListener('submit', sendMessage, true);
     document.querySelector('#message').addEventListener('input', handleTyping);
+});
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelector('#usernameForm').addEventListener('submit', connect, true);
+    document.querySelector('#messageForm').addEventListener('submit', sendMessage, true);
+    document.querySelector('#message').addEventListener('input', handleTyping);
+    document.querySelector('#messages').addEventListener('scroll', async function () {
+        if (this.scrollTop === 0 && !loadingHistory) {
+            loadingHistory = true;
+            await loadOldMessages();
+            loadingHistory = false;
+        }
+    });
 });
 
 function connect(event) {
@@ -21,7 +35,11 @@ function connect(event) {
 
     socket = new WebSocket('ws://localhost:8080/ws/chat');
 
-    socket.onopen = () => send({ type: 'JOIN', sender: username });
+    socket.onopen = async () => {
+        send({ type: 'JOIN', sender: username });
+        await loadOldMessages();
+    };
+
     socket.onmessage = onMessageReceived;
 }
 
@@ -96,4 +114,30 @@ function onMessageReceived(event) {
 
     messageArea.appendChild(li);
     messageArea.scrollTop = messageArea.scrollHeight;
+}
+async function loadOldMessages() {
+    if (loadingHistory) return;
+    loadingHistory = true;
+
+    try {
+        const response = await fetch(`/api/messages?page=${++currentPage}&size=20`);
+        const messages = await response.json();
+        const messageArea = document.querySelector('#messages');
+
+        const prevScrollHeight = messageArea.scrollHeight;
+
+        messages.reverse().forEach(msg => {
+            const message = JSON.parse(msg);
+            const li = document.createElement('li');
+            li.textContent = `${message.sender}: ${message.content}`;
+            messageArea.prepend(li);
+        });
+
+        const newScrollHeight = messageArea.scrollHeight;
+        messageArea.scrollTop = newScrollHeight - prevScrollHeight;
+    } catch (e) {
+        console.error("Failed to load messages:", e);
+    } finally {
+        loadingHistory = false;
+    }
 }
